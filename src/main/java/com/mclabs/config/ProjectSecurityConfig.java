@@ -8,11 +8,14 @@ import javax.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.web.firewall.HttpFirewall;
+import org.springframework.security.web.firewall.StrictHttpFirewall;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -51,6 +54,7 @@ public class ProjectSecurityConfig extends WebSecurityConfigurerAdapter {
 		/** <----- csrf -----> */
 //		http.csrf().ignoringAntMatchers("/contact"). // except the request for /contact
 //				csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse());
+// withHttpOnlyFalse - The browser will allow javascript originating from the same origin to access the cookie.
 		http.csrf().disable();
 
 		// <----- Filter Config ------>
@@ -69,10 +73,47 @@ public class ProjectSecurityConfig extends WebSecurityConfigurerAdapter {
 //			.formLogin()
 //			.and()
 //			.httpBasic();
-		http.authorizeRequests().antMatchers("/myAccount").hasRole("USER").antMatchers("/myBalance")
-				.hasAnyRole("USER", "ADMIN").antMatchers("/myLoans").hasRole("ROOT") // .authenticated()
-				.antMatchers("/myCards").authenticated().antMatchers("/notices").permitAll().antMatchers("/contact")
-				.permitAll().and().formLogin().and().httpBasic();
+		http
+		.exceptionHandling()
+			.accessDeniedPage("/access_denied")
+			.accessDeniedHandler(new AccessDeniedHandlerimpl())
+		.and()
+			.authorizeRequests()
+			.antMatchers("/myAccount").hasRole("USER").antMatchers("/myBalance")
+			.hasAnyRole("USER", "ADMIN").antMatchers("/myLoans").hasRole("ROOT") // .authenticated()
+			.antMatchers("/myCards").authenticated().antMatchers("/notices")
+			.permitAll().antMatchers("/contact")
+			.permitAll()
+			.and()
+			.formLogin()
+				.successHandler(new AuthenticationSuccessHandlerImpl())
+				.failureHandler(new AuthenticationFailureHandlerImpl())
+				.defaultSuccessUrl("/home")
+			.and()
+			.httpBasic()
+			.and()
+			.logout()
+				.logoutUrl("/api/logout")
+				.logoutSuccessUrl("/");
+
+		/**
+		 * some more about auth requestand MUST TRY
+		 * 
+		 */
+		// http
+		// 	.headers()
+		// 	.contentSecurityPolicy("script-src: http://mydomain...")
+		// 	.and()
+		// 	.frameOptions().sameOrigin()		// disable clickjacking
+		// 	.cacheControl().disable()		// use cacheControl in rest controller
+		// 	.and()
+		// 	.authorizeRequests()
+		// 	.mvcMatchers("/login")
+		// 	.permitAll()
+		// 	.anyRequest()
+		// 	.authenticated()
+		// 	.and()
+		// 	.formLogin().loginPage("/login");
 
 		/**
 		 * Configuration to deny all the requests
@@ -104,6 +145,23 @@ public class ProjectSecurityConfig extends WebSecurityConfigurerAdapter {
 //		userDetailsService.createUser(user1);
 //		auth.userDetailsService(userDetailsService);
 //	}
+
+/**
+ * 
+ * unblock all javascript css and html.
+ */
+	@Override
+	public void configure(WebSecurity web) throws Exception {
+		web.ignoring().mvcMatchers("/css/**", "/webjars/**", "/js/**");
+	}
+
+	/** http firewall - Blocks Non-ASCII characters */
+	@Bean
+	public HttpFirewall firewall() {
+		StrictHttpFirewall firewall = new StrictHttpFirewall();
+		firewall.setAllowSemicolon(true);		
+		return firewall;
+	}
 
 	@Bean
 	public PasswordEncoder passwordEncoder() {
